@@ -1,0 +1,36 @@
+name: LG Life Care 상품 크롤링
+
+on:
+  schedule:
+    # 매일 오전 9시 (KST) 실행 — UTC 기준 00:00
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    # 수동 실행 버튼 활성화
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 의존성 설치
+        run: pip install playwright==1.49.1 python-dotenv==1.0.1 "python-telegram-bot==21.9"
+
+      - name: Playwright Chromium 설치
+        run: playwright install chromium --with-deps
+
+      - name: 크롤러 실행
+        env:
+          LG_ID: ${{ secrets.LG_ID }}
+          LG_PW: ${{ secrets.LG_PW }}
+          TARGET_URL: ${{ secrets.TARGET_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python main.py
