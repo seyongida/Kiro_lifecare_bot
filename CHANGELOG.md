@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.2] - 2026-03-20
+
+### 버그 수정
+- `main.py`: 스크린샷 `full_page=True` → `full_page=False` 변경
+  - full_page 캡처 시 이미지 높이가 텔레그램 제한 초과 → `Photo_invalid_dimensions` 에러 수정
+
+### 변경사항
+- `.github/workflows/scrape.yml`: `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true` 환경변수 추가
+  - `actions/checkout@v4`, `actions/setup-python@v5`의 Node.js 20 deprecation 경고 해결
+
 ## [0.8.1] - 2026-03-20
 
 ### 버그 수정

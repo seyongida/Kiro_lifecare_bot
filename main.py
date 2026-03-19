@@ -111,7 +111,7 @@ async def take_screenshot(page):
     """페이지 전체 스크린샷"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filepath = SCREENSHOT_DIR / f"capture_{timestamp}.png"
-    await page.screenshot(path=str(filepath), full_page=True)
+    await page.screenshot(path=str(filepath), full_page=False)
     print(f"스크린샷 저장: {filepath}")
     return filepath
 

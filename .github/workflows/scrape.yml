@@ -7,6 +7,9 @@ on:
   workflow_dispatch:
     # 수동 실행 버튼 활성화
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   scrape:
     runs-on: ubuntu-latest
