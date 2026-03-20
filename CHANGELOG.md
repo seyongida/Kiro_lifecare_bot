@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2] - 2026-03-20
+
+### 추가
+- `.github/workflows/scrape.yml`: 저장소 비활성 방지 keep-alive step 추가
+  - 매월 1일 schedule 실행 시 빈 커밋(`[skip ci]`) 자동 push
+  - GitHub Actions 60일 비활성 시 schedule 자동 중단되는 문제 방지
+
 ## [0.9.1] - 2026-03-20
 
 ### 변경사항
