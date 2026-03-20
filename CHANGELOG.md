@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.0.6] - 2026-03-20
+
+### 추가
+- `tests/test_white_monitor.py` 신규 생성 — `is_white_monitor()` 단위 테스트 5개
+  - 화이트 모델 판별 (prod_name 블록 매칭)
+  - 검색결과 없으면 비화이트
+  - 연관 상품만 있으면 비화이트 (27MS500 케이스)
+  - 한국 유통 suffix(.AKRG) 제거 후 base 모델명으로 검색하는지 확인
+  - 네트워크 오류 시 비화이트 fallback
+- `pyproject.toml`: `[dependency-groups] dev` 섹션 추가 — `pytest>=8.0`
+
+## [1.0.5] - 2026-03-20
+
+### 검증
+- 실제 Life Care 데이터(128개 상품)로 `is_white_monitor()` 다나와 검색 판별 검증
+  - (W) 판정 결과: `34GX90SAW.BKR(W)`, `32GS95UVW.BKR(W)` 2개 — 실제 화이트 모델 정확 확인
+  - `27MS500` 비화이트 정확 판별 확인
+  - 전체 등급모니터 18개 모델 판별 오류 없음
+
 ## [1.0.4] - 2026-03-20
 
 ### 변경
