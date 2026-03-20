@@ -2,7 +2,7 @@ name: LG Life Care 상품 크롤링
 
 on:
   schedule:
-    # 매일 오전 11시 (KST) 실행 — UTC 기준 00:00
+    # 매일 오전 11시 (KST) 실행 — UTC 기준 02:00
     - cron: '0 2 * * *'
   workflow_dispatch:
     # 수동 실행 버튼 활성화
