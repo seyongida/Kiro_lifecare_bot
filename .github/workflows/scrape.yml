@@ -37,3 +37,25 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python main.py
+
+      - name: 스크린샷 확인 (디버그)
+        if: always()
+        run: |
+          pip install pillow -q
+          python -c "
+          import os, glob
+          from PIL import Image
+          files = glob.glob('screenshots/*.png')
+          for f in sorted(files)[-3:]:
+              img = Image.open(f)
+              size = os.path.getsize(f)
+              print(f'{f}: {img.size}, {size/1024:.1f}KB')
+          "
+
+      - name: 스크린샷 artifact 업로드 (디버그)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots/
+          retention-days: 3

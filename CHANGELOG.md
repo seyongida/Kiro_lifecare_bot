@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.1] - 2026-03-20
+
+### 변경사항
+- `.github/workflows/scrape.yml`: 디버그용 step 2개 추가 (`if: always()`로 실패 시에도 실행)
+  - 스크린샷 크기 확인: Pillow로 이미지 width×height, 파일 크기(KB) 출력
+  - `actions/upload-artifact@v4`로 `screenshots/` 폴더를 artifact로 업로드 (3일 보관)
+  - `Photo_invalid_dimensions` 원인 파악을 위한 임시 디버그 조치
+
 ## [0.9.0] - 2026-03-20
 
 ### 문서
