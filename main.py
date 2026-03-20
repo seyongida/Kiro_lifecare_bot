@@ -116,31 +116,77 @@ async def take_screenshot(page):
     return filepath
 
 
-def format_products(products, total):
+async def is_white_monitor(model_name: str) -> bool:
+    """모델명으로 화이트 색상 여부 판별 (등급모니터 전용)"""
+    # 한국 유통 suffix 제거: 27SR75U.AKRG → 27SR75U
+    base = re.sub(r'\.[A-Z]+$', '', model_name).strip()
+
+    # 색상 suffix 추출: 마지막 -X 패턴
+    color_match = re.search(r'-([A-Z])$', base)
+    if color_match:
+        suffix = color_match.group(1)
+        if suffix == 'W':
+            return True
+        # B=Black, S=Silver, G=Green, P=Pink, C=Charcoal, K=Black
+        if suffix in ('B', 'S', 'G', 'P', 'C', 'K'):
+            return False
+
+    # suffix 없거나 불명확 → 웹 검색으로 판별
+    # "LG 모델명 white" 검색 후 white 언급 수가 black의 2배 이상이면 화이트로 판별
+    query = f"LG+{base}+monitor+white"
+    url = f"https://html.duckduckgo.com/html/?q={query}"
+    try:
+        async with httpx.AsyncClient(timeout=10, verify=False) as client:
+            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+            text = resp.text.lower()
+            white_count = text.count('white') + text.count('화이트')
+            black_count = text.count('black') + text.count('블랙')
+            result = white_count > 0 and white_count >= black_count * 2
+            print(f"  웹검색 [{base}]: white={white_count}, black={black_count} → {'(W)' if result else '비화이트'}")
+            return result
+    except Exception as e:
+        print(f"  웹검색 실패 [{base}]: {e}")
+        return False
+
+
+async def format_products(products, total):
     """상품 목록을 종류별 그룹 후 가격 오름차순 정렬하여 텍스트 생성"""
     collected = len(products)
-    lines = [f"{p['name']} / {p['price']}" for p in products]
-    product_text = "\n".join(lines)
+    header = f"총 {total}개 중 {collected}개 수집 (품절 제외)\n{TARGET_URL}"
 
     # [등급][종류]모델명 / 가격 패턴 파싱 (index: 0=등급, 1=종류, 2=모델명, 3=가격)
     pattern = re.compile(r'\[([^\]]+)\]\[([^\]]+)\](\S+) / (\S+)')
-    matches = pattern.findall(product_text)
 
-    header = f"총 {total}개 중 {collected}개 수집 (품절 제외)\n{TARGET_URL}"
+    matched = []
+    unmatched = []
 
-    if matches:
-        # 종류(1) 기준 1차 정렬, 가격(3) 기준 2차 오름차순 정렬
-        sorted_matches = sorted(
-            matches,
-            key=lambda x: (x[1], int(x[3].replace(',', '')))
-        )
-        sorted_text = '\n'.join(
-            f"[{m[0]}][{m[1]}]{m[2]} / {m[3]}" for m in sorted_matches
-        )
-        return f"{header}\n\n{sorted_text}"
+    for p in products:
+        line = f"{p['name']} / {p['price']}"
+        m = pattern.match(line)
+        if m:
+            matched.append(list(m.groups()))
+        else:
+            unmatched.append(line)
 
-    # 패턴 매칭 안 되면 원본 그대로
-    return f"{header}\n\n{product_text}"
+    # 등급모니터 상품에 한해 화이트 여부 판별 후 모델명에 (W) 추가
+    for item in matched:
+        if '등급모니터' in item[1]:
+            if await is_white_monitor(item[2]):
+                item[2] = f"{item[2]}(W)"
+                print(f"  화이트 확정: {item[2]}")
+
+    # 패턴 매칭된 상품: 종류(1) 기준 1차 정렬, 가격(3) 기준 2차 오름차순 정렬
+    sorted_matched = sorted(
+        matched,
+        key=lambda x: (x[1], int(x[3].replace(',', '')))
+    )
+    sorted_lines = [f"[{m[0]}][{m[1]}]{m[2]} / {m[3]}" for m in sorted_matched]
+
+    # 패턴 미매칭 상품은 뒤에 그대로 추가
+    all_lines = sorted_lines + unmatched
+
+    print(f"포맷 완료: 정렬 {len(sorted_lines)}개, 미매칭 {len(unmatched)}개")
+    return f"{header}\n\n" + "\n".join(all_lines)
 
 
 async def send_telegram(message, screenshot_path):
@@ -172,7 +218,7 @@ async def main():
             screenshot_path = await take_screenshot(page)
 
             if products:
-                message = format_products(products, total)
+                message = await format_products(products, total)
                 await send_telegram(message, screenshot_path)
             else:
                 await send_telegram("오늘은 등록된 상품이 없습니다.", screenshot_path)
