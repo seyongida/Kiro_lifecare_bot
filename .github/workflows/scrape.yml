@@ -24,7 +24,7 @@ jobs:
           python-version: '3.11'
 
       - name: 의존성 설치
-        run: pip install playwright==1.49.1 python-dotenv==1.0.1 "python-telegram-bot==21.9"
+        run: pip install playwright==1.49.1 python-dotenv==1.0.1 requests>=2.32 "python-telegram-bot==21.9"
 
       - name: Playwright Chromium 설치
         run: playwright install chromium --with-deps
