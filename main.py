@@ -4,11 +4,14 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 
+import requests
+import urllib3
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
-import httpx
 from telegram import Bot
 from telegram.request import HTTPXRequest
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 load_dotenv()
 
@@ -116,36 +119,55 @@ async def take_screenshot(page):
     return filepath
 
 
-async def is_white_monitor(model_name: str) -> bool:
-    """모델명으로 화이트 색상 여부 판별 (등급모니터 전용)"""
+def is_white_monitor(model_name: str) -> bool:
+    """다나와 화이트 모니터 필터 검색으로 화이트 색상 여부 판별 (등급모니터 전용)
+    
+    한국 유통 suffix(.AKRG 등) 제거 후 base 모델명으로
+    다나와 LG 화이트 모니터 필터 검색 결과에 해당 모델이 있으면 화이트로 판정
+    """
     # 한국 유통 suffix 제거: 27SR75U.AKRG → 27SR75U
     base = re.sub(r'\.[A-Z]+$', '', model_name).strip()
 
-    # 색상 suffix 추출: 마지막 -X 패턴
-    color_match = re.search(r'-([A-Z])$', base)
-    if color_match:
-        suffix = color_match.group(1)
-        if suffix == 'W':
-            return True
-        # B=Black, S=Silver, G=Green, P=Pink, C=Charcoal, K=Black
-        if suffix in ('B', 'S', 'G', 'P', 'C', 'K'):
+    params = {
+        "query": base,
+        "maker": "2137",                          # LG전자
+        "attribute": "346318-916486-OR",           # 화이트 색상 필터
+        "defaultPhysicsCategoryCode": "860|13735|14883|58972",
+        "tab": "main",
+        "mode": "simple",
+    }
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://www.danawa.com/",
+        "Accept-Language": "ko-KR,ko;q=0.9",
+    }
+    try:
+        resp = requests.get(
+            "https://search.danawa.com/dsearch.php",
+            params=params, headers=headers, timeout=10, verify=False
+        )
+        text = resp.text
+
+        # 검색 결과 없으면 비화이트
+        if "검색된 상품이 없습니다" in text or "결과가 없습니다" in text:
+            print(f"  색상판별 [{base}]: 검색결과 없음 → 비화이트")
             return False
 
-    # suffix 없거나 불명확 → 웹 검색으로 판별
-    # "LG 모델명 white" 검색 후 white 언급 수가 black의 2배 이상이면 화이트로 판별
-    query = f"LG+{base}+monitor+white"
-    url = f"https://html.duckduckgo.com/html/?q={query}"
-    try:
-        async with httpx.AsyncClient(timeout=10, verify=False) as client:
-            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
-            text = resp.text.lower()
-            white_count = text.count('white') + text.count('화이트')
-            black_count = text.count('black') + text.count('블랙')
-            result = white_count > 0 and white_count >= black_count * 2
-            print(f"  웹검색 [{base}]: white={white_count}, black={black_count} → {'(W)' if result else '비화이트'}")
-            return result
+        # prod_name 블록 내 텍스트에 base 모델명이 포함되는지 확인
+        # 연관 상품이 함께 노출될 수 있으므로 정확한 모델명 매칭 필요
+        blocks = re.findall(r'class="prod_name">(.*?)</p>', text, re.DOTALL)
+        for block in blocks:
+            names = re.findall(r'>([^<>\n]+)<', block)
+            full_name = ' '.join(n.strip() for n in names if n.strip())
+            if base.lower() in full_name.lower():
+                print(f"  색상판별 [{base}]: '{full_name}' → 화이트")
+                return True
+
+        print(f"  색상판별 [{base}]: 정확 매칭 없음 → 비화이트")
+        return False
+
     except Exception as e:
-        print(f"  웹검색 실패 [{base}]: {e}")
+        print(f"  색상판별 [{base}]: 오류({e}) → 비화이트")
         return False
 
 
@@ -171,7 +193,7 @@ async def format_products(products, total):
     # 등급모니터 상품에 한해 화이트 여부 판별 후 모델명에 (W) 추가
     for item in matched:
         if '등급모니터' in item[1]:
-            if await is_white_monitor(item[2]):
+            if is_white_monitor(item[2]):
                 item[2] = f"{item[2]}(W)"
                 print(f"  화이트 확정: {item[2]}")
 

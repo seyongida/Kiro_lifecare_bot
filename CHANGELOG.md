@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.0.4] - 2026-03-20
+
+### 변경
+- `is_white_monitor()`: suffix 기반 판별 → 다나와 검색 기반 판별로 전면 교체
+  - Life Care 사이트가 모델명을 `27SR75U.AKRG` 형태로만 노출 (색상 suffix 미포함)로 인해 suffix 방식으로는 화이트 판별 불가
+  - 다나와 LG 화이트 모니터 필터(`attribute=346318-916486-OR`, `maker=2137`) 검색 후 `prod_name` 블록에 base 모델명이 포함되면 화이트로 판정
+  - 연관 상품이 함께 노출되는 경우를 걸러내기 위해 단순 텍스트 포함 여부가 아닌 `prod_name` 블록 내 정확 매칭 방식 사용
+  - 검증: `27SR75U`, `27SR50F`, `27US500` → 화이트 / `27MS500`, `27BR400` → 비화이트 정확 판별 확인
+- `httpx` 의존성 → `requests>=2.32`로 교체 (`requirements.txt`, `pyproject.toml`)
+- `urllib3` InsecureRequestWarning 전역 suppress 추가
+
+## [1.0.3] - 2026-03-20
+
+### 조사
+- 실제 수집 모델명 형태 확인: `27SR75U.AKRG`, `27SR50F.AKRG`, `27US500.AKRG`
+  - 사이트는 `모델명.AKRG` 형태로만 노출 — 색상 suffix(`-W`, `-B`) 미포함
+  - `.AKRG` 제거 후 base 모델명에 색상 suffix가 없으므로 현재 로직으로는 화이트 모델 감지 불가
+  - 해결 방향: 화이트 모델 화이트리스트 하드코딩 또는 상품명 HTML에서 색상 정보 추출 검토 필요
+
+## [1.0.2] - 2026-03-20
+
+### 조사
+- `is_white_monitor()` 동작 검증 — suffix 없는 모델 3종 실행 확인
+  - `27SR75U`, `27SR50F`, `27US500` 모두 suffix 없음 → 비화이트로 판별됨
+  - 현재 로직은 사이트가 `-W` / `-B` 등 색상 suffix를 포함한 전체 모델명을 노출해야 정확히 동작
+  - 사이트가 suffix 없이 모델명만 노출하는 경우 화이트/블랙 구분 불가 → 실제 수집 데이터 확인 필요
+
+## [1.0.1] - 2026-03-20
+
+### 버그 수정
+- `is_white_monitor()`: 화이트 모델 오판 버그 수정
+  - 기존: suffix 없는 모델(27MS500, 27BR400 등)을 DuckDuckGo 웹검색으로 판별 → 검색 결과에 "white" 언급이 많으면 화이트로 오판
+  - 변경: `-W` suffix인 경우만 화이트로 확정, suffix 없거나 `-B` 등 기타 suffix는 모두 비화이트로 처리
+  - 웹검색 fallback 로직 완전 제거
+  - `async` 함수 → 일반 동기 함수로 변경 (비동기 불필요)
+  - `format_products()` 내 `await is_white_monitor()` → `is_white_monitor()` 호출로 수정
+
+### 삭제
+- `httpx` import 제거 — 웹검색 fallback 제거로 더 이상 불필요
+
 ## [1.0.0] - 2026-03-20
 
 ### 추가
