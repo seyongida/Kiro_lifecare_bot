@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.9.0] - 2026-03-20
+
+### 문서
+- `.kiro/specs/lg-lifecare-scraper/design.md` 실제 구현 기준으로 전면 수정
+  - Overview: "페이지네이션 신규 추가" 문구 제거, 실제 구현 기준 서술로 변경
+  - 핵심 설계 결정: URL 페이지네이션 전략 → 더보기 버튼 클릭 DOM 누적 로드 전략으로 교체, SSL 우회 항목 추가
+  - Architecture 다이어그램: `scrape_products` 흐름을 더보기 버튼 클릭 루프 구조로 재작성
+  - `scrape_products` 인터페이스: URL 페이지네이션 루프 → 더보기 버튼 클릭 루프 의사코드로 교체
+  - `send_telegram` 인터페이스: `HTTPXRequest(verify=False)` SSL 우회 명세 추가
+  - Data Models: 스크린샷 파일명 패턴에 `full_page=False` 뷰포트 캡처 주의사항 추가
+  - Correctness Properties: Property 1·2를 URL 기반 → 더보기 버튼 DOM 증가/루프 종료 속성으로 교체
+  - Testing Strategy: 속성 기반 테스트 표에서 `test_pagination_url_format` → `test_more_btn_loop_termination`으로 교체
+- `.kiro/specs/lg-lifecare-scraper/tasks.md` 신규 생성 — 테스트 작성 구현 계획
+  - 태스크 1: `pyproject.toml`에 `pytest`, `hypothesis` 의존성 추가
+  - 태스크 2: `tests/test_main.py` 단위 테스트 (빈 상품 목록, 패턴 불일치 순서 보존)
+  - 태스크 3: Hypothesis 속성 기반 테스트 6개 (Property 2~7, 각 100회 반복)
+  - 태스크 4: 전체 테스트 통과 확인 체크포인트
+
+## [0.8.3] - 2026-03-20
+
+### 문서
+- `.kiro/specs/lg-lifecare-scraper/requirements.md` 실제 구현 기준으로 업데이트
+  - Requirement 2: URL `&page=N` 페이지네이션 방식 → 더보기 버튼 클릭으로 DOM 누적 로드 후 JS evaluate 한 번에 수집하는 방식으로 전면 수정
+  - Requirement 3: "전체 페이지 스크린샷" → 뷰포트 캡처(`full_page=False`) 명세로 수정
+  - Requirement 5: 회사 네트워크 self-signed SSL 인증서 우회(`HTTPXRequest(verify=False)`) 항목 추가
+  - Introduction 및 Glossary의 더보기 버튼 설명을 실제 동작(DOM 누적 로드)에 맞게 수정
+
 ## [0.8.2] - 2026-03-20
 
 ### 버그 수정

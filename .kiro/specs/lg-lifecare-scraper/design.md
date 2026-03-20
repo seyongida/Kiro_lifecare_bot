@@ -4,14 +4,15 @@
 
 LG U+ Life Care 스크래퍼는 `lguplus.lglifecare.com`에 사번으로 로그인하여 LG등급 카테고리의 상품명·가격을 전체 페이지에 걸쳐 수집하고, 결과를 텔레그램 봇으로 전송하는 단일 파일 Python 스크립트입니다.
 
-현재 `main.py`에 로그인·단일 페이지 크롤링·스크린샷·텔레그램 전송이 구현되어 있으며, 이 설계 문서는 기존 구현을 문서화하고 **페이지네이션 처리**를 신규 기능으로 추가하는 것을 목표로 합니다.
+현재 `main.py`에 로그인·크롤링·스크린샷·텔레그램 전송이 구현되어 있으며, 이 설계 문서는 실제 구현을 기준으로 작성되었습니다.
 
 ### 핵심 설계 결정
 
 - **단일 파일 구조**: 모든 로직은 `main.py` 한 파일에 위치 (400줄 이내)
 - **비동기 실행**: `asyncio` + Playwright async API로 I/O 대기 최소화
-- **페이지네이션 전략**: `button.btn_more_down` 존재 여부로 다음 페이지 판단, `TARGET_URL&page={n}` URL 패턴으로 이동
+- **상품 로드 전략**: `button.btn_more_down` 클릭 반복으로 단일 페이지 DOM에 전체 상품 누적 로드 후 JS evaluate로 한 번에 수집
 - **품절 필터링**: `.sold_txt` 요소 포함 항목은 JavaScript evaluate 단계에서 제외
+- **SSL 우회**: 회사 네트워크 self-signed 인증서 대응을 위해 `HTTPXRequest(verify=False)` 사용
 
 ---
 
@@ -32,14 +33,14 @@ flowchart TD
     B4 -- Yes --> B5[팝업 닫기]
     B4 -- No --> B6[계속]
 
-    C --> C1[TARGET_URL 이동 - 1페이지]
-    C1 --> C2[상품 수집 - JS evaluate]
-    C2 --> C3{수집 0개?}
-    C3 -- Yes --> C6[종료]
-    C3 -- No --> C4{btn_more_down 존재?}
-    C4 -- No --> C6
-    C4 -- Yes --> C5[page_num += 1, 다음 URL 이동]
-    C5 --> C2
+    C --> C1[TARGET_URL 이동]
+    C1 --> C2[총 상품 수 읽기]
+    C2 --> C3{btn_more_down 존재?}
+    C3 -- No --> C5[JS evaluate 전체 수집]
+    C3 -- Yes --> C4[더보기 버튼 클릭]
+    C4 --> C4a[nhm-item 증가 대기 - 최대 10초]
+    C4a --> C3
+    C5 --> C6[품절 항목 제외 후 반환]
 
     E --> E1{패턴 파싱 성공?}
     E1 -- Yes --> E2[종류·가격 오름차순 정렬]
@@ -84,17 +85,16 @@ async def scrape_products(page: Page) -> tuple[list[dict], str]
 - `products`: `[{"name": str, "price": str}, ...]` — 품절 제외 상품 목록
 - `total`: `.txt_mb .num` 텍스트 (총 상품 수, 파싱 실패 시 `"?"`)
 
-**페이지네이션 루프 (신규)**:
+**더보기 버튼 클릭 루프**:
 ```
-page_num = 1
 while True:
-    if page_num > 1:
-        goto TARGET_URL&page={page_num}
-    products = JS evaluate(.nhm-item 필터링)
-    if not products: break
-    all_products.extend(products)
-    if btn_more_down 없음 or 비표시: break
-    page_num += 1
+    more_btn = page.locator('button.btn_more_down')
+    if count == 0 or not visible: break
+    prev_count = .nhm-item 개수
+    more_btn.click()
+    wait_for_function(.nhm-item 개수 > prev_count, timeout=10000)
+
+products = JS evaluate(전체 .nhm-item 수집, .sold_txt 제외)
 ```
 
 ### take_screenshot(page: Page) → Path
@@ -122,7 +122,8 @@ def format_products(products: list[dict], total: str) -> str
 async def send_telegram(message: str, screenshot_path: Path) -> None
 ```
 
-- `Bot(token=TELEGRAM_BOT_TOKEN)`
+- `Bot(token=TELEGRAM_BOT_TOKEN, request=HTTPXRequest(http_version="1.1", httpx_kwargs={"verify": False}))`
+- 회사 네트워크 self-signed 인증서 우회를 위해 SSL 검증 비활성화
 - 메시지를 4096자 단위로 청크 분할하여 순서대로 `send_message`
 - 마지막으로 `send_photo`로 스크린샷 전송
 
@@ -164,6 +165,8 @@ n페이지: TARGET_URL + f"&page={n}"
 에러: screenshots/error_{YYYYMMDD_HHMMSS}.png
 ```
 
+> 스크린샷은 `full_page=False`로 현재 뷰포트(1280×720)만 캡처합니다. 전체 페이지 스크롤 캡처 시 텔레그램 이미지 크기 제한(`Photo_invalid_dimensions`)을 초과할 수 있습니다.
+
 
 ---
 
@@ -171,17 +174,17 @@ n페이지: TARGET_URL + f"&page={n}"
 
 *A property is a characteristic or behavior that should hold true across all valid executions of a system — essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
 
-### Property 1: 페이지네이션 URL 생성 정확성
+### Property 1: 더보기 버튼 클릭 후 DOM 증가 보장
 
-*For any* 양의 정수 `page_num`에 대해, 다음 페이지 URL은 항상 `TARGET_URL + "&page={page_num}"` 형식이어야 한다. 즉, 임의의 `TARGET_URL`과 `page_num`에 대해 생성된 URL은 `TARGET_URL`로 시작하고 `&page={page_num}`으로 끝나야 한다.
+*For any* 더보기 버튼 클릭 이전의 `.nhm-item` 개수 `prev_count`에 대해, 클릭 후 DOM의 `.nhm-item` 개수는 반드시 `prev_count`보다 커야 한다. 즉, 더보기 클릭은 항상 새 상품을 DOM에 추가해야 한다.
 
-**Validates: Requirements 2.4**
+**Validates: Requirements 2.3, 2.4**
 
-### Property 2: 페이지네이션 종료 조건
+### Property 2: 더보기 루프 종료 조건
 
-*For any* 페이지 수집 결과에서, 수집된 상품이 0개이거나 `btn_more_down`이 없으면 루프는 반드시 종료되어야 한다. 즉, 종료 조건이 충족된 이후에는 추가 페이지 요청이 발생하지 않아야 한다.
+*For any* 수집 루프 실행에서, `button.btn_more_down`이 존재하지 않거나 비표시 상태이면 루프는 반드시 종료되어야 한다. 즉, 종료 조건이 충족된 이후에는 추가 클릭이 발생하지 않아야 한다.
 
-**Validates: Requirements 2.5, 2.6**
+**Validates: Requirements 2.5**
 
 ### Property 3: 포맷팅 헤더 형식
 
@@ -272,7 +275,7 @@ tests/
 
 | 속성 | 테스트 함수 | 요구사항 |
 |---|---|---|
-| Property 1 | `test_pagination_url_format` | 2.4 |
+| Property 2 | `test_more_btn_loop_termination` | 2.5 |
 | Property 3 | `test_format_header_format` | 4.4, 4.5 |
 | Property 4 | `test_format_products_sorted` | 4.2 |
 | Property 5 | `test_format_products_fallback_order` | 4.3 |
