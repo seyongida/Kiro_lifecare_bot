@@ -177,7 +177,8 @@ async def format_products(products, total):
     header = f"총 {total}개 중 {collected}개 수집 (품절 제외)\n{TARGET_URL}"
 
     # [등급][종류]모델명 / 가격 패턴 파싱 (index: 0=등급, 1=종류, 2=모델명, 3=가격)
-    pattern = re.compile(r'\[([^\]]+)\]\[([^\]]+)\](\S+) / (\S+)')
+    # 모델명에 공백이 포함될 수 있으므로 .+? 사용
+    pattern = re.compile(r'\[([^\]]+)\]\[([^\]]+)\](.+?) / (\S+)$')
 
     matched = []
     unmatched = []
