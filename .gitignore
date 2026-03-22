@@ -208,3 +208,7 @@ __marimo__/
 
 # Screenshots
 screenshots/
+
+# 임시 스크립트 및 크롤링 결과 파일
+_tmp_*.py
+raw_products_*.txt
