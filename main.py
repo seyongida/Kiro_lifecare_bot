@@ -175,13 +175,21 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like 
 
 
 async def check_projector_ust(model_name: str, browser_page) -> bool:
-    """LG 전자 제품 페이지에서 '초단초점' 텍스트 확인 (실패 시 False 반환)"""
-    # 접미사(.BKR 등) 제거 후 소문자로 URL 슬러그 생성
+    """LG 전자 제품 페이지에서 초단초점 여부 판별 (실패 시 False 반환)
+    
+    '투사형' 텍스트가 있으면 비초단초점, '초단초점'만 있으면 UST로 판정.
+    연관 상품 등 다른 섹션에 '초단초점'이 노출될 수 있으므로
+    '투사형' 존재 여부를 우선 확인하여 오판 방지.
+    """
     slug = model_name.split('.')[0].lower()
     url = f"https://www.lge.co.kr/projectors/{slug}"
     try:
         await browser_page.goto(url, timeout=20000, wait_until="networkidle")
         content = await browser_page.content()
+        # '투사형'이 있으면 일반 프로젝터로 확정 (초단초점 텍스트가 다른 섹션에 있어도 무시)
+        if "투사형" in content:
+            print(f"  UST판별 [{slug}]: 투사형 확인 → 비초단초점")
+            return False
         result = "초단초점" in content
         print(f"  UST판별 [{slug}]: {'초단초점' if result else '투사형'}")
         return result
