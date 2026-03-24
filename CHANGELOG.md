@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.3.0] - 2026-03-24
+
+### 추가
+- `check_projector_ust(model_name, browser_page)` 함수 신규 추가 — LG 전자 한국 사이트에서 프로젝터 초단초점 여부 판별
+  - `lge.co.kr/projectors/{슬러그}` 페이지 로드 후 `초단초점` 텍스트 유무로 판정
+  - User-Agent 설정 필수 (미설정 시 JS 렌더링 안 됨)
+  - 타임아웃·404 등 오류 시 `False` 반환 → `(UST)` 미추가
+- `format_products()`: `ust_page` 파라미터 추가 — 프로젝터 항목에 한해 초단초점 판별 후 모델명 뒤에 ` (UST)` 자동 추가
+  - 동일 모델 중복 요청 방지를 위해 슬러그 기준 캐시 처리
+  - `ust_page=None`이면 UST 판별 스킵 (하위 호환)
+- `main()`: UST 판별 전용 페이지(`ust_page`) 별도 생성 후 `format_products()`에 전달
+  - `set_extra_http_headers`로 User-Agent 설정
+
+### 삭제
+- `_tmp_ust_check.py` 임시 검증 스크립트 역할 종료 (main.py에 통합)
+
+## [1.2.0] - 2026-03-24
+
+### 조사
+- 프로젝터 초단초점(UST) 자동 태깅 기능 구현 가능 여부 검증
+  - `raw_products_20260323_082838.txt` 기준 프로젝터 11개(고유 모델 8개) 확인
+  - LG 전자 한국 사이트(`lge.co.kr/projectors/{모델슬러그}`) 페이지에서 `초단초점` 텍스트 유무로 판별하는 방식 채택
+  - Playwright headless 실행 시 User-Agent 미설정이면 JS 렌더링이 안 되어 `초단초점` 텍스트 미노출 확인 → User-Agent 설정 필수
+  - `networkidle` 대기 시 일부 모델(BF50RG, BU60RG) 타임아웃 발생 — 오류 시 비초단초점으로 안전 처리
+  - 초단초점 모델 3개 확인: `PU615U`(시네빔 쇼츠), `HU810PW`, `HU915QE`(시네빔 Laser 4K)
+  - 초단초점 모델 라인에 `(UST)` 태그 추가 변환 로직 검증 완료
+
+### 추가
+- `_tmp_ust_check.py` 신규 생성 — 프로젝터 초단초점 판별 및 `(UST)` 태그 추가 검증용 임시 스크립트
+
 ## [1.1.0] - 2026-03-23
 
 ### 변경

@@ -171,7 +171,26 @@ def is_white_monitor(model_name: str) -> bool:
         return False
 
 
-async def format_products(products, total):
+UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+
+async def check_projector_ust(model_name: str, browser_page) -> bool:
+    """LG 전자 제품 페이지에서 '초단초점' 텍스트 확인 (실패 시 False 반환)"""
+    # 접미사(.BKR 등) 제거 후 소문자로 URL 슬러그 생성
+    slug = model_name.split('.')[0].lower()
+    url = f"https://www.lge.co.kr/projectors/{slug}"
+    try:
+        await browser_page.goto(url, timeout=20000, wait_until="networkidle")
+        content = await browser_page.content()
+        result = "초단초점" in content
+        print(f"  UST판별 [{slug}]: {'초단초점' if result else '투사형'}")
+        return result
+    except Exception as e:
+        print(f"  UST판별 [{slug}]: 오류({e}) → 비초단초점")
+        return False
+
+
+async def format_products(products, total, ust_page=None):
     """상품 목록을 종류별 그룹 후 가격 오름차순 정렬하여 텍스트 생성"""
     collected = len(products)
     header = f"총 {total}개 중 {collected}개 수집 (품절 제외)\n{TARGET_URL}"
@@ -191,12 +210,25 @@ async def format_products(products, total):
         else:
             unmatched.append(line)
 
-    # 등급모니터 상품에 한해 화이트 여부 판별 후 모델명에 (W) 추가
+    # 등급모니터: 화이트 여부 판별 후 모델명에 (W) 추가
     for item in matched:
         if '등급모니터' in item[1]:
             if is_white_monitor(item[2]):
                 item[2] = f"{item[2]}(W)"
                 print(f"  화이트 확정: {item[2]}")
+
+    # 프로젝터: 초단초점 여부 판별 후 모델명에 (UST) 추가 (ust_page 없으면 스킵)
+    if ust_page:
+        # 동일 모델 중복 요청 방지를 위해 슬러그 기준 캐시
+        ust_cache: dict[str, bool] = {}
+        for item in matched:
+            if '프로젝터' in item[1]:
+                slug = item[2].split('.')[0].lower()
+                if slug not in ust_cache:
+                    ust_cache[slug] = await check_projector_ust(item[2], ust_page)
+                if ust_cache[slug]:
+                    item[2] = f"{item[2]} (UST)"
+                    print(f"  UST 확정: {item[2]}")
 
     # 패턴 매칭된 상품: 종류(1) 기준 1차 정렬, 가격(3) 기준 2차 오름차순 정렬
     sorted_matched = sorted(
@@ -235,13 +267,17 @@ async def main():
         context = await browser.new_context(viewport={"width": 1280, "height": 720})
         page = await context.new_page()
 
+        # UST 판별용 별도 페이지 (lge.co.kr 접근, User-Agent 필수)
+        ust_page = await context.new_page()
+        await ust_page.set_extra_http_headers({"User-Agent": UA})
+
         try:
             await login(page)
             products, total = await scrape_products(page)
             screenshot_path = await take_screenshot(page)
 
             if products:
-                message = await format_products(products, total)
+                message = await format_products(products, total, ust_page=ust_page)
                 await send_telegram(message, screenshot_path)
             else:
                 await send_telegram("오늘은 등록된 상품이 없습니다.", screenshot_path)
