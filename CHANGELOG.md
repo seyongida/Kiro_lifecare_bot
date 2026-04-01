@@ -30,6 +30,13 @@
 ### 추가
 - `_tmp_ust_check.py` 신규 생성 — 프로젝터 초단초점 판별 및 `(UST)` 태그 추가 검증용 임시 스크립트
 
+## [1.1.3] - 2026-03-23
+
+### 버그 수정
+- `.github/workflows/scrape.yml`: keep-alive step `git push` 403 권한 에러 수정
+  - 원인: `permissions` 미설정으로 기본 `read` 권한만 부여 → `github-actions[bot]`이 push 불가
+  - 수정: `permissions: contents: write` 추가
+
 ## [1.1.2] - 2026-03-23
 
 ### 검증
