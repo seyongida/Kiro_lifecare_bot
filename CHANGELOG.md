@@ -30,6 +30,13 @@
 ### 추가
 - `_tmp_ust_check.py` 신규 생성 — 프로젝터 초단초점 판별 및 `(UST)` 태그 추가 검증용 임시 스크립트
 
+## [1.1.4] - 2026-03-24
+
+### 변경
+- `.github/workflows/scrape.yml`: keep-alive step의 `if: github.event_name == 'schedule'` 조건 제거
+  - 수동 실행(`workflow_dispatch`)에서도 keep-alive step 실행 가능하도록 변경
+  - 실제 push는 매월 1일 조건(`if [ "$DAY" = "01" ]`)으로 여전히 제한됨
+
 ## [1.1.3] - 2026-03-23
 
 ### 버그 수정
