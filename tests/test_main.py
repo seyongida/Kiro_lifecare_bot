@@ -207,11 +207,38 @@ class TestMessageChunkRoundtrip:
     @given(st.text(min_size=0, max_size=20000))
     @settings(max_examples=100)
     def test_chunk_roundtrip(self, message):
-        chunks = [message[i:i + 4096] for i in range(0, max(len(message), 1), 4096)]
+        chunks = m.chunk_text(message, 4096)
         # 각 청크 길이 ≤ 4096
         assert all(len(c) <= 4096 for c in chunks)
         # 이어 붙이면 원본과 동일
         assert "".join(chunks) == message
+
+    @given(st.text(min_size=1, max_size=20000))
+    @settings(max_examples=100)
+    def test_telegram_messages_within_limit(self, message):
+        texts = m.build_telegram_messages(message, limit=4096)
+        assert all(len(t) <= 4096 for t in texts)
+
+    def test_no_split_has_no_header(self):
+        message = "짧은 메시지"
+        texts = m.build_telegram_messages(message, limit=4096)
+        assert texts == [message]
+
+    def test_split_has_index_header_on_every_message(self):
+        message = "가" * 9000
+        texts = m.build_telegram_messages(message, limit=4096)
+        total = len(texts)
+        assert total > 1
+        for i, text in enumerate(texts, start=1):
+            assert text.startswith(f"[{i}/{total}]\n")
+
+    def test_split_messages_reconstruct_original_body(self):
+        message = "나" * 9000
+        texts = m.build_telegram_messages(message, limit=4096)
+        total = len(texts)
+        body = "".join(t.split("\n", 1)[1] for t in texts)
+        assert body == message
+        assert total > 1
 
 
 class TestScreenshotFilenamePattern:

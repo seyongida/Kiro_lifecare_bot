@@ -252,6 +252,27 @@ async def format_products(products, total, ust_page=None):
     return f"{header}\n\n" + "\n".join(all_lines)
 
 
+def chunk_text(message, limit=4096):
+    """메시지를 limit 길이 단위로 분할 (이어 붙이면 원본과 동일)"""
+    if not message:
+        return [message]
+    return [message[i:i + limit] for i in range(0, len(message), limit)]
+
+
+def build_telegram_messages(message, limit=4096, header_reserve=24):
+    """텔레그램 전송용 메시지 목록 생성.
+
+    분할이 발생하는 경우에만 각 조각 상단에 "[i/총개수]" 표시를 붙인다.
+    헤더가 차지할 공간(header_reserve)을 미리 확보한 뒤 분할하므로,
+    헤더를 붙여도 각 메시지는 limit을 넘지 않는다.
+    """
+    chunks = chunk_text(message, limit - header_reserve)
+    total = len(chunks)
+    if total <= 1:
+        return chunks
+    return [f"[{i}/{total}]\n{chunk}" for i, chunk in enumerate(chunks, start=1)]
+
+
 async def send_telegram(message, screenshot_path):
     """텔레그램으로 메시지 + 스크린샷 전송"""
     # 회사 네트워크 self-signed 인증서 우회
@@ -260,8 +281,8 @@ async def send_telegram(message, screenshot_path):
         httpx_kwargs={"verify": False}
     ))
 
-    for i in range(0, len(message), 4096):
-        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message[i:i+4096])
+    for text in build_telegram_messages(message):
+        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=text)
 
     with open(screenshot_path, "rb") as photo:
         await bot.send_photo(chat_id=TELEGRAM_CHAT_ID, photo=photo)
