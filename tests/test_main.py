@@ -240,6 +240,26 @@ class TestMessageChunkRoundtrip:
         assert body == message
         assert total > 1
 
+    def test_split_repeats_product_count_header_on_every_message(self):
+        """상품 총 개수를 알리는 헤더(format_products 스타일)가
+        분할된 모든 메시지에 반복되어야 한다."""
+        header = f"총 100개 중 80개 수집 (품절 제외)\n{TARGET_URL_MOCK}"
+        body = "\n".join(f"상품{i} / 10,000원" for i in range(2000))
+        message = f"{header}\n\n{body}"
+
+        texts = m.build_telegram_messages(message, limit=4096)
+        total = len(texts)
+        assert total > 1
+        for i, text in enumerate(texts, start=1):
+            assert text.startswith(f"[{i}/{total}]\n{header}\n\n")
+            assert len(text) <= 4096
+
+    def test_pathological_header_does_not_exceed_limit(self):
+        """헤더로 오인될 앞부분이 지나치게 길어도 limit을 넘지 않아야 한다."""
+        message = ("x" * 5000) + "\n\n" + ("y" * 5000)
+        texts = m.build_telegram_messages(message, limit=4096)
+        assert all(len(t) <= 4096 for t in texts)
+
 
 class TestScreenshotFilenamePattern:
     """태스크 3.6 — Property 7: 스크린샷 파일명 패턴
