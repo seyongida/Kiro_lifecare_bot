@@ -259,18 +259,38 @@ def chunk_text(message, limit=4096):
     return [message[i:i + limit] for i in range(0, len(message), limit)]
 
 
-def build_telegram_messages(message, limit=4096, header_reserve=24):
+def build_telegram_messages(message, limit=4096, index_reserve=24):
     """텔레그램 전송용 메시지 목록 생성.
 
-    분할이 발생하는 경우에만 각 조각 상단에 "[i/총개수]" 표시를 붙인다.
-    헤더가 차지할 공간(header_reserve)을 미리 확보한 뒤 분할하므로,
-    헤더를 붙여도 각 메시지는 limit을 넘지 않는다.
+    분할이 발생하지 않으면 원본 메시지를 그대로 반환한다.
+    분할이 발생하면 각 조각 상단에 "[i/총개수]" 순번 표시와, 상품 총 개수를
+    알려주는 원본 헤더(format_products가 만든 "총 N개 중 M개 수집..." 줄)를
+    함께 반복해서 붙인다. 원본 헤더는 메시지의 첫 "\n\n" 앞부분으로 판단한다.
     """
-    chunks = chunk_text(message, limit - header_reserve)
-    total = len(chunks)
-    if total <= 1:
-        return chunks
-    return [f"[{i}/{total}]\n{chunk}" for i, chunk in enumerate(chunks, start=1)]
+    if len(message) <= limit:
+        return [message]
+
+    if "\n\n" in message:
+        header, body = message.split("\n\n", 1)
+    else:
+        header, body = "", message
+
+    header_block_len = len(header) + 2 if header else 0
+    if header and index_reserve + header_block_len >= limit:
+        # 헤더 자체가 지나치게 길면 반복하지 않고 순번 표시만 유지한다
+        header, header_block_len = "", 0
+    chunk_size = max(limit - index_reserve - header_block_len, 1)
+    body_chunks = chunk_text(body, chunk_size)
+    total = len(body_chunks)
+
+    messages = []
+    for i, chunk in enumerate(body_chunks, start=1):
+        index_line = f"[{i}/{total}]"
+        if header:
+            messages.append(f"{index_line}\n{header}\n\n{chunk}")
+        else:
+            messages.append(f"{index_line}\n{chunk}")
+    return messages
 
 
 async def send_telegram(message, screenshot_path):
