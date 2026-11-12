@@ -1,74 +1,131 @@
 name: LG Life Care 상품 크롤링
 
+# ── 실행 시각 설계 ─────────────────────────────────────────────
+# GitHub의 schedule 이벤트는 몇 시간씩 지연될 수 있어(실측: KST 11:00 예약 → 17시경 시작)
+# 단일 cron으로는 시각을 보장할 수 없다. 그래서 KST 03:07~11:07 동안 30분 간격으로
+# 여러 번 트리거하고, scripts/schedule_gate.py가 각 실행에서 판단한다:
+#   - 오늘 이미 전송했으면 스킵 (actions/cache 마커로 중복 방지)
+#   - RUN_AT(KST) 전 WINDOW_MINUTES 구간에 도착하면 RUN_AT까지 대기 후 실행
+#   - RUN_AT보다 늦게 도착하면 즉시 실행, 너무 이르면 스킵
+# 정각(:00)은 GitHub 스케줄러가 가장 붐비므로 :07/:37 분을 사용한다.
 on:
   schedule:
-    # 매일 오전 11시 (KST) 실행 — UTC 기준 02:00
-    - cron: '0 2 * * *'
+    - cron: '7,37 18-23 * * *'   # KST 03:07 ~ 08:37
+    - cron: '7,37 0-1 * * *'     # KST 09:07 ~ 10:37
+    - cron: '7 2 * * *'          # KST 11:07
   workflow_dispatch:
-    # 수동 실행 버튼 활성화
+    inputs:
+      force:
+        description: '시간/중복 검사 없이 즉시 실행 (false면 스케줄과 동일한 규칙 적용)'
+        type: boolean
+        default: true
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  RUN_AT: '11:29'          # 크롤러 시작 시각 (KST). 실행에 ~30초 걸려 11:30경 알림 도착
+  WINDOW_MINUTES: '60'
+
+# 동시에 하나만 실행 → 대기 중인 실행이 끝난 뒤 다음 실행이 마커를 보고 스킵
+concurrency:
+  group: lifecare-daily
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    timeout-minutes: 90
 
     steps:
       - name: 코드 체크아웃
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Python 설정
-        uses: actions/setup-python@v5
+      - name: 오늘 날짜(KST)
+        id: today
+        run: echo "date=$(python3 scripts/schedule_gate.py --print-date)" >> "$GITHUB_OUTPUT"
+
+      - name: 오늘 전송 여부 확인
+        id: marker
+        uses: actions/cache/restore@v5
         with:
-          python-version: '3.11'
+          path: .sent-marker
+          key: lifecare-sent-${{ steps.today.outputs.date }}
+          lookup-only: true
+
+      - name: 실행 여부 판단
+        id: gate
+        run: >-
+          python3 scripts/schedule_gate.py
+          --run-at "$RUN_AT"
+          --window-minutes "$WINDOW_MINUTES"
+          --already-sent "${{ steps.marker.outputs.cache-hit == 'true' }}"
+          --force "${{ github.event_name == 'workflow_dispatch' && inputs.force }}"
+
+      - name: uv 설치
+        if: steps.gate.outputs.proceed == 'true'
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.12'
+          enable-cache: true
 
       - name: 의존성 설치
-        run: pip install playwright==1.49.1 python-dotenv==1.0.1 requests>=2.32 "python-telegram-bot==21.9"
+        if: steps.gate.outputs.proceed == 'true'
+        run: uv sync --frozen --no-dev
 
       - name: Playwright Chromium 설치
-        run: playwright install chromium --with-deps
+        if: steps.gate.outputs.proceed == 'true'
+        run: uv run --no-sync playwright install chromium --with-deps
+
+      - name: 목표 시각까지 대기
+        if: steps.gate.outputs.proceed == 'true'
+        env:
+          RUN_AT_EPOCH: ${{ steps.gate.outputs.run_at_epoch }}
+        run: |
+          now=$(date +%s)
+          if [ "$RUN_AT_EPOCH" -gt "$now" ]; then
+            echo "$((RUN_AT_EPOCH - now))초 대기 (KST $RUN_AT)"
+            sleep $((RUN_AT_EPOCH - now))
+          fi
 
       - name: 크롤러 실행
+        id: scrape
+        if: steps.gate.outputs.proceed == 'true'
         env:
           LG_ID: ${{ secrets.LG_ID }}
           LG_PW: ${{ secrets.LG_PW }}
           TARGET_URL: ${{ secrets.TARGET_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python main.py
-
-      - name: 스크린샷 확인 (디버그)
-        if: always()
+        # 종료 코드: 0=전송 완료, 3=실패했지만 실패 알림 전송됨, 그 외=아무것도 전달 못함
         run: |
-          pip install pillow -q
-          python -c "
-          import os, glob
-          from PIL import Image
-          files = glob.glob('screenshots/*.png')
-          for f in sorted(files)[-3:]:
-              img = Image.open(f)
-              size = os.path.getsize(f)
-              print(f'{f}: {img.size}, {size/1024:.1f}KB')
-          "
+          set +e
+          uv run --no-sync python main.py
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit $code
+
+      - name: 전송 완료 마커 생성
+        id: mark
+        if: >-
+          always() && steps.gate.outputs.proceed == 'true'
+          && !(github.event_name == 'workflow_dispatch' && inputs.force)
+          && (steps.scrape.outputs.exit_code == '0' || steps.scrape.outputs.exit_code == '3')
+        run: date -u +%FT%TZ > .sent-marker
+
+      # 알림이 전달된 날만 마커 저장 → 아무것도 전달 못한 날은 다음 트리거가 재시도
+      - name: 전송 완료 마커 저장
+        if: always() && steps.mark.outcome == 'success'
+        uses: actions/cache/save@v5
+        with:
+          path: .sent-marker
+          key: lifecare-sent-${{ steps.today.outputs.date }}
 
       - name: 스크린샷 artifact 업로드 (디버그)
-        if: always()
-        uses: actions/upload-artifact@v4
+        if: always() && steps.gate.outputs.proceed == 'true'
+        uses: actions/upload-artifact@v5
         with:
           name: screenshots
           path: screenshots/
           retention-days: 3
-
-      - name: 저장소 활성 상태 유지 (매월 1일)
-        # 60일 비활성 시 GitHub Actions schedule 자동 중단 방지
-        run: |
-          DAY=$(date +%d)
-          if [ "$DAY" = "01" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git commit --allow-empty -m "chore: keep-alive [skip ci]"
-            git push
-          fi
+          if-no-files-found: ignore

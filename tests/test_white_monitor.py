@@ -60,3 +60,12 @@ def test_한국유통suffix_제거후_판별(mock_get):
 def test_네트워크_오류시_비화이트(mock_get):
     mock_get.side_effect = Exception('connection error')
     assert is_white_monitor('27SR75U.AKRG') is False
+
+
+@patch('main.requests.get')
+def test_ssl_verify_설정_전달(mock_get):
+    mock_get.return_value = _mock_response(WHITE_HTML)
+    is_white_monitor('27SR75U.AKRG')
+    assert mock_get.call_args[1]['verify'] is True
+    is_white_monitor('27SR75U.AKRG', verify=False)
+    assert mock_get.call_args[1]['verify'] is False
