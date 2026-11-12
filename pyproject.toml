@@ -1,6 +1,7 @@
 [project]
 name = "lifecare-bot"
-version = "0.1.0"
+version = "1.4.0"
+description = "LG U+ Life Care 상품 크롤러 + 텔레그램 알림"
 requires-python = ">=3.9"
 dependencies = [
     "playwright==1.49.1",
@@ -14,3 +15,7 @@ dev = [
     "pytest>=8.0",
     "hypothesis>=6.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
